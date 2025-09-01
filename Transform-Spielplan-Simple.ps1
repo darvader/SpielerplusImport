@@ -15,7 +15,30 @@ try {
     Import-Module ImportExcel
 }
 
-# Add System.Web assembly for URL encoding
+# Add System.Web as# Display summary
+Write-Host "`nTransformation Summary:" -ForegroundColor Cyan
+Write-Host "- Transformed records: $($transformedData.Count)" -ForegroundColor White
+Write-Host "- Output file: $OutputPath" -ForegroundColor White
+
+# Show OpenAI usage statistics
+if ($global:openAICallCount -gt 0 -or $global:germanTextCache.Count -gt 0) {
+    Write-Host "`nOpenAI German Text Correction Summary:" -ForegroundColor Cyan
+    Write-Host "- API calls made: $global:openAICallCount" -ForegroundColor White
+    Write-Host "- Cached corrections: $($global:germanTextCache.Count)" -ForegroundColor White
+    if ($global:germanTextCache.Count -gt 0) {
+        Write-Host "- Cache contents:" -ForegroundColor White
+        $global:germanTextCache.GetEnumerator() | ForEach-Object {
+            Write-Host "  '$($_.Key)' -> '$($_.Value)'" -ForegroundColor Gray
+        }
+    }
+}
+
+# Show sample of transformed data
+Write-Host "`nSample of transformed data:" -ForegroundColor Cyan
+$transformedData | Select-Object -First 5 | Format-Table -Property 'Spieltyp (Opptional)', 'Gegner', 'Start-Datum', 'Start-Zeit', 'Heimspiel', 'Gelände / Räumlichkeiten' -AutoSize
+
+Write-Host "`nColumns included in the output:" -ForegroundColor Cyan
+$transformedData[0].PSObject.Properties.Name | ForEach-Object { Write-Host "  $_" -ForegroundColor White }URL encoding
 Add-Type -AssemblyName System.Web
 
 # Function to load environment variables from .env file
@@ -43,34 +66,40 @@ function Get-EnvironmentConfig {
 $envConfig = Get-EnvironmentConfig
 
 # Get configuration values with fallbacks
-$GoogleMapsApiKey = if ($envConfig["GOOGLE_MAPS_API_KEY"]) { $envConfig["GOOGLE_MAPS_API_KEY"] } else { "" }
+$GoogleApiKey = if ($envConfig["GOOGLE_API_KEY"]) { $envConfig["GOOGLE_API_KEY"] } else { "" }
+$OpenAIApiKey = if ($envConfig["OPENAI_API_KEY"]) { $envConfig["OPENAI_API_KEY"] } else { "" }
 $homeTeamName = if ($envConfig["HOME_TEAM_NAME"]) { $envConfig["HOME_TEAM_NAME"] } else { "1. VSV Jena II" }
 $homeTeamVenue = if ($envConfig["HOME_TEAM_VENUE"]) { $envConfig["HOME_TEAM_VENUE"] } else { "SH Lobdeburgschule (07747 Jena)" }
 $responseDeadlineHours = if ($envConfig["RESPONSE_DEADLINE_HOURS"]) { [int]$envConfig["RESPONSE_DEADLINE_HOURS"] } else { 168 }  # 7 days default
 $reminderHours = if ($envConfig["REMINDER_HOURS"]) { [int]$envConfig["REMINDER_HOURS"] } else { 336 }  # 14 days default
+
+# Global cache for German text corrections to avoid repeated API calls
+$global:germanTextCache = @{}
+$global:lastOpenAICall = [DateTime]::MinValue
+$global:openAICallCount = 0
 
 Write-Host "Reading CSV file..." -ForegroundColor Green
 
 Write-Host "Configuration:" -ForegroundColor Cyan
 Write-Host "  Home Team: $homeTeamName" -ForegroundColor White
 Write-Host "  Home Venue: $homeTeamVenue" -ForegroundColor White
-Write-Host "  Google Maps API: $(if ($GoogleMapsApiKey) { 'Configured' } else { 'Not configured (using static estimates)' })" -ForegroundColor White
+Write-Host "  Google API: $(if ($GoogleApiKey) { 'Configured' } else { 'Not configured (using static estimates)' })" -ForegroundColor White
 Write-Host "  Response Deadline: $responseDeadlineHours hours ($([math]::Round($responseDeadlineHours / 24, 1)) days)" -ForegroundColor White
 Write-Host "  Reminder Time: $reminderHours hours ($([math]::Round($reminderHours / 24, 1)) days)" -ForegroundColor White
 
-if ($GoogleMapsApiKey -and $GoogleMapsApiKey -ne "your_google_maps_api_key_here") {
-    Write-Host "`nGoogle Maps API Setup:" -ForegroundColor Cyan
-    Write-Host "  To use Google Maps for real-time travel calculations, ensure:" -ForegroundColor Gray
+if ($GoogleApiKey -and $GoogleApiKey -ne "your_google_api_key_here") {
+    Write-Host "`nGoogle API Setup:" -ForegroundColor Cyan
+    Write-Host "  To use Google services for travel calculations and text encoding, ensure:" -ForegroundColor Gray
     Write-Host "  1. Distance Matrix API is enabled in Google Cloud Console" -ForegroundColor Gray
-    Write-Host "  2. Billing is set up for your Google Cloud project" -ForegroundColor Gray
-    Write-Host "  3. Your API key has no restrictions blocking this usage" -ForegroundColor Gray
-    Write-Host "  4. You haven't exceeded your quota limits" -ForegroundColor Gray
-} elseif (!$GoogleMapsApiKey -or $GoogleMapsApiKey -eq "your_google_maps_api_key_here") {
-    Write-Host "`nGoogle Maps API not configured. Using static travel time estimates." -ForegroundColor Yellow
-    Write-Host "  To enable real-time calculations:" -ForegroundColor Gray
+    Write-Host "  2. Cloud Translation API is enabled in Google Cloud Console" -ForegroundColor Gray
+    Write-Host "  3. Billing is set up for your Google Cloud project" -ForegroundColor Gray
+    Write-Host "  4. Your API key has no restrictions blocking this usage" -ForegroundColor Gray
+} elseif (!$GoogleApiKey -or $GoogleApiKey -eq "your_google_api_key_here") {
+    Write-Host "`nGoogle API not configured. Using static estimates and local text fixes." -ForegroundColor Yellow
+    Write-Host "  To enable Google services:" -ForegroundColor Gray
     Write-Host "  1. Copy .env.example to .env" -ForegroundColor Gray
     Write-Host "  2. Get API key from: https://console.cloud.google.com/apis/credentials" -ForegroundColor Gray
-    Write-Host "  3. Enable Distance Matrix API in Google Cloud Console" -ForegroundColor Gray
+    Write-Host "  3. Enable Distance Matrix API and Cloud Translation API" -ForegroundColor Gray
     Write-Host "  4. Set up billing for your Google Cloud project" -ForegroundColor Gray
 }
 
@@ -93,12 +122,186 @@ $csvContent = Get-Content -Path $csvFullPath -Encoding UTF8
 function Fix-GermanEncoding {
     param([string]$text)
     
-    # Fix common German characters that appear as '�'
+    # Early return if text is empty or null
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        return $text
+    }
+    
+    # Try OpenAI API for intelligent German character restoration if API key is available
+    if (![string]::IsNullOrWhiteSpace($OpenAIApiKey) -and $text -match '�') {
+        
+        # Check cache first
+        if ($global:germanTextCache.ContainsKey($text)) {
+            $cachedResult = $global:germanTextCache[$text]
+            Write-Host "Using cached result: '$text' -> '$cachedResult'" -ForegroundColor Cyan
+            return $cachedResult
+        }
+        
+        # Rate limiting: max 3 calls per minute for free tier
+        $now = Get-Date
+        if ($now.Subtract($global:lastOpenAICall).TotalSeconds -lt 60) {
+            if ($global:openAICallCount -ge 3) {
+                $waitTime = 60 - $now.Subtract($global:lastOpenAICall).TotalSeconds
+                Write-Host "Rate limit reached. Waiting $([math]::Ceiling($waitTime)) seconds..." -ForegroundColor Yellow
+                Start-Sleep -Seconds ([math]::Ceiling($waitTime))
+                $global:openAICallCount = 0
+                $global:lastOpenAICall = Get-Date
+            }
+        } else {
+            # Reset counter if more than a minute has passed
+            $global:openAICallCount = 0
+            $global:lastOpenAICall = $now
+        }
+        
+        try {
+            Write-Host "Using OpenAI API to fix German encoding for: $text (Call #$($global:openAICallCount + 1))" -ForegroundColor Yellow
+            
+            $apiUrl = "https://api.openai.com/v1/chat/completions"
+            
+            $prompt = @"
+Fix the corrupted German text by replacing the � symbols with the correct German characters (ä, ö, ü, ß). 
+This is volleyball schedule data from Thuringia, Germany. Context: team names, venue names, city names.
+
+Original text: "$text"
+
+Rules:
+1. Only replace � symbols with correct German characters
+2. Keep all other text exactly the same
+3. Consider German place names, street names, and common German words
+4. Return ONLY the corrected text, no explanations
+
+Corrected text:
+"@
+
+            $requestBody = @{
+                model = "gpt-3.5-turbo"
+                messages = @(
+                    @{
+                        role = "user"
+                        content = $prompt
+                    }
+                )
+                max_tokens = 100
+                temperature = 0.1
+            } | ConvertTo-Json -Depth 3
+
+            $headers = @{
+                "Authorization" = "Bearer $OpenAIApiKey"
+                "Content-Type" = "application/json"
+            }
+            
+            Write-Host "Sending request to OpenAI API..." -ForegroundColor Cyan
+            
+            $response = Invoke-RestMethod -Uri $apiUrl -Method Post -Body $requestBody -Headers $headers
+            $global:openAICallCount++
+            
+            if ($response.choices -and $response.choices.Count -gt 0) {
+                $correctedText = $response.choices[0].message.content.Trim()
+                
+                # Remove any quotes that might be added by the API
+                $correctedText = $correctedText -replace '^"', '' -replace '"$', ''
+                
+                # Cache the result
+                $global:germanTextCache[$text] = $correctedText
+                
+                Write-Host "OpenAI result: '$text' -> '$correctedText'" -ForegroundColor Green
+                return $correctedText
+            } else {
+                Write-Warning "OpenAI API returned unexpected response format"
+            }
+        } catch {
+            Write-Warning "OpenAI API failed: $($_.Exception.Message)"
+            if ($_.ErrorDetails.Message) {
+                Write-Host "API Error Details: $($_.ErrorDetails.Message)" -ForegroundColor Red
+            }
+            # Fall back to local replacement rules
+        }
+    }
+
+    # Try smart German character restoration using context and common patterns
+    if ($text -match '�') {
+        Write-Host "Using smart German character restoration for: $text" -ForegroundColor Yellow
+        
+        # Create a comprehensive mapping based on common German volleyball terms and places
+        $restoredText = $text
+        
+        # City names and places (most common in Thuringia volleyball)
+        $restoredText = $restoredText -replace "Oberwei�bach", "Oberweißbach"
+        $restoredText = $restoredText -replace "Th�ringenliga", "Thüringenliga"
+        $restoredText = $restoredText -replace "Th�ringen", "Thüringen"
+        
+        # Street names and venues
+        $restoredText = $restoredText -replace "Nordstra�e", "Nordstraße"
+        $restoredText = $restoredText -replace "Stra�e", "Straße"
+        $restoredText = $restoredText -replace "Gro�", "Groß"
+        
+        # Person names (common German surnames)
+        $restoredText = $restoredText -replace "Reinhard-He�", "Reinhard-Heß"
+        $restoredText = $restoredText -replace "Fr�bel", "Fröbel"
+        $restoredText = $restoredText -replace "M�ller", "Müller"
+        $restoredText = $restoredText -replace "Sch�fer", "Schäfer"
+        $restoredText = $restoredText -replace "Kr�ger", "Krüger"
+        
+        # Common German words in sports context
+        $restoredText = $restoredText -replace "Sporthalle", "Sporthalle"  # Already correct
+        $restoredText = $restoredText -replace "Turnhalle", "Turnhalle"    # Already correct
+        $restoredText = $restoredText -replace "M�nchen", "München"
+        $restoredText = $restoredText -replace "N�rnberg", "Nürnberg"
+        $restoredText = $restoredText -replace "W�rzburg", "Würzburg"
+        $restoredText = $restoredText -replace "D�sseldorf", "Düsseldorf"
+        
+        # Pattern-based replacements for common German character combinations
+        # ß patterns (most � in German text are ß)
+        $restoredText = $restoredText -replace "wei�", "weiß"      # Oberweißbach, weißt, etc.
+        $restoredText = $restoredText -replace "gro�", "groß"      # groß, große, etc.
+        $restoredText = $restoredText -replace "hei�", "heiß"      # heiß, heißt, etc.
+        $restoredText = $restoredText -replace "wei�", "weiß"      # Already covered above
+        $restoredText = $restoredText -replace "stra�", "straß"    # Straße, etc.
+        $restoredText = $restoredText -replace "fu�", "fuß"        # Fuß, etc.
+        
+        # ü patterns 
+        $restoredText = $restoredText -replace "�ringen", "üringen"  # Thüringen
+        $restoredText = $restoredText -replace "�r", "ür"            # für, über, etc.
+        $restoredText = $restoredText -replace "�n", "ün"            # grün, München, etc.
+        
+        # ä patterns
+        $restoredText = $restoredText -replace "�r", "är"            # Bär, wär, etc. (if not caught by ü)
+        $restoredText = $restoredText -replace "�h", "äh"            # näher, etc.
+        
+        # ö patterns  
+        $restoredText = $restoredText -replace "�l", "öl"            # Köln, etc.
+        $restoredText = $restoredText -replace "�n", "ön"            # schön, etc. (if not caught by ü)
+        
+        # Final fallback: if we still have � characters, assume they're ß (most common case)
+        $restoredText = $restoredText -replace "�", "ß"
+        
+        if ($restoredText -ne $text) {
+            Write-Host "Smart restoration: '$text' -> '$restoredText'" -ForegroundColor Green
+            return $restoredText
+        } else {
+            Write-Host "No changes needed for: $text" -ForegroundColor Cyan
+        }
+    }
+    
+    # Fallback: Local replacement rules for common German encoding issues
+    Write-Host "Using local encoding fixes for: $text" -ForegroundColor Cyan
+    
+    # Fix common German characters that appear as '�' due to encoding issues
     $text = $text -replace "Oberwei�bach", "Oberweißbach"
     $text = $text -replace "Th�ringenliga", "Thüringenliga"
     $text = $text -replace "Th�ringen", "Thüringen"
     $text = $text -replace "Reinhard-He�", "Reinhard-Heß"
     $text = $text -replace "Nordstra�e", "Nordstraße"
+    $text = $text -replace "Wei�", "Weiß"
+    $text = $text -replace "Stra�e", "Straße"
+    $text = $text -replace "Gro�", "Groß"
+    $text = $text -replace "F��e", "Füße"
+    $text = $text -replace "M�nchen", "München"
+    $text = $text -replace "N�rnberg", "Nürnberg"
+    $text = $text -replace "W�rzburg", "Würzburg"
+    
+    # Fix common patterns where � appears
+    $text = $text -replace "�", "ß"  # Most common case: ß becomes �
     
     return $text
 }
@@ -145,7 +348,7 @@ function Get-TravelTime {
     }
     
     # Try Google Maps API if API key is provided
-    if (![string]::IsNullOrWhiteSpace($GoogleMapsApiKey)) {
+    if (![string]::IsNullOrWhiteSpace($GoogleApiKey)) {
         try {
             Write-Host "Calculating travel time from $origin to $destination using Google Maps..." -ForegroundColor Yellow
             
@@ -154,7 +357,7 @@ function Get-TravelTime {
             $encodedDestination = [System.Web.HttpUtility]::UrlEncode($destination)
             
             # Construct Google Maps Distance Matrix API URL
-            $apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json?origins=$encodedOrigin&destinations=$encodedDestination&mode=driving&language=de&key=$GoogleMapsApiKey"
+            $apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json?origins=$encodedOrigin&destinations=$encodedDestination&mode=driving&language=de&key=$GoogleApiKey"
             
             # Make API request
             $response = Invoke-RestMethod -Uri $apiUrl -Method Get
