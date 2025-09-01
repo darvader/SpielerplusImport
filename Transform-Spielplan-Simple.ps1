@@ -137,10 +137,12 @@ function Fix-GermanEncoding {
             return $cachedResult
         }
         
-        # Rate limiting: max 3 calls per minute for free tier
+        # Rate limiting: More generous for paid models
+        # gpt-4o-mini has much higher limits than free tier gpt-3.5-turbo
         $now = Get-Date
         if ($now.Subtract($global:lastOpenAICall).TotalSeconds -lt 60) {
-            if ($global:openAICallCount -ge 3) {
+            # Allow up to 30 calls per minute for paid models (conservative estimate)
+            if ($global:openAICallCount -ge 30) {
                 $waitTime = 60 - $now.Subtract($global:lastOpenAICall).TotalSeconds
                 Write-Host "Rate limit reached. Waiting $([math]::Ceiling($waitTime)) seconds..." -ForegroundColor Yellow
                 Start-Sleep -Seconds ([math]::Ceiling($waitTime))
@@ -174,7 +176,7 @@ Corrected text:
 "@
 
             $requestBody = @{
-                model = "gpt-3.5-turbo"
+                model = "gpt-4o-mini"  # Faster, cheaper, higher rate limits than gpt-3.5-turbo
                 messages = @(
                     @{
                         role = "user"
