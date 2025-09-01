@@ -79,6 +79,11 @@ foreach ($line in $csvContent[1..($csvContent.Count - 1)]) {
         continue
     }
     
+    # Filter only games with '1. VSV Jena II'
+    if ($mannschaft1 -ne "1. VSV Jena II" -and $mannschaft2 -ne "1. VSV Jena II") {
+        continue
+    }
+    
     # Parse date and time
     $gameDate = $null
     $gameTime = $null
@@ -102,16 +107,30 @@ foreach ($line in $csvContent[1..($csvContent.Count - 1)]) {
     # Create info text with referee and game ID
     $gameInfo = "$st - $spielrunde | Spiel-ID: $nummer | Schiedsrichter: $schiedsgericht"
     
+    # Determine home game and opponent based on which position '1. VSV Jena II' is in
+    $isHomeGame = $false
+    $opponent = ""
+    
+    if ($mannschaft1 -eq "1. VSV Jena II") {
+        # VSV Jena II is Mannschaft 1, so it's a home game
+        $isHomeGame = $true
+        $opponent = $mannschaft2
+    } else {
+        # VSV Jena II is Mannschaft 2, so it's an away game
+        $isHomeGame = $false
+        $opponent = $mannschaft1
+    }
+    
     # Create transformed record matching Excel template columns exactly
     $transformedRecord = [PSCustomObject]@{
         'Spieltyp (Opptional)' = "Spiel"  # Default to "Spiel" for all volleyball games
-        'Gegner' = $mannschaft2  # Away team as opponent
+        'Gegner' = $opponent  # The other team (opponent)
         'Start-Datum' = if ($gameDate) { $gameDate } else { $null }
         'End-Datum' = if ($gameDate) { $gameDate } else { $null }  # Same as start date for volleyball games
         'Start-Zeit' = if ($gameTime) { $gameTime.TimeOfDay.TotalDays } else { $null }  # Excel time format
         'End-Zeit (Optional)' = if ($gameTime) { ($gameTime.AddHours(2)).TimeOfDay.TotalDays } else { $null }  # Estimated 2-hour duration
         'Treffen (Optional)' = if ($gameTime) { ($gameTime.AddMinutes(-30)).TimeOfDay.TotalDays } else { $null }  # 30 min before game
-        'Heimspiel' = if ($gastgeber -eq $mannschaft1) { "TRUE" } else { "FALSE" }  # True if hosting team is home team
+        'Heimspiel' = if ($isHomeGame) { "TRUE" } else { "FALSE" }  # True when VSV Jena II is Mannschaft 1
         'Gelände / Räumlichkeiten' = $austragungsort
         'Adresse (Optional)' = ""  # Not available in source data
         'Infos zum Spiel (Optional)' = $gameInfo  # Round, league, game ID and referee info
