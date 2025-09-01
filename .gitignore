@@ -1,0 +1,4 @@
+# Excel temporary files (created when Excel files are open)
+~$*.xlsx
+~$*.xls
+~$*.xlsm

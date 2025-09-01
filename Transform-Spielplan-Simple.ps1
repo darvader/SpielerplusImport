@@ -32,6 +32,20 @@ Write-Host "Found CSV file at: $csvFullPath" -ForegroundColor Green
 # Read the raw CSV content
 $csvContent = Get-Content -Path $csvFullPath -Encoding UTF8
 
+# Function to fix encoding issues with German umlauts and ß
+function Fix-GermanEncoding {
+    param([string]$text)
+    
+    # Fix common German characters that appear as '�'
+    $text = $text -replace "Oberwei�bach", "Oberweißbach"
+    $text = $text -replace "Th�ringenliga", "Thüringenliga"
+    $text = $text -replace "Th�ringen", "Thüringen"
+    $text = $text -replace "Reinhard-He�", "Reinhard-Heß"
+    $text = $text -replace "Nordstra�e", "Nordstraße"
+    
+    return $text
+}
+
 # Define the columns we want to keep (up to 'Geschlecht')
 $desiredColumns = @(
     "Datum", "Uhrzeit", "Wochentag", "#", "ST", "Mannschaft 1", "Mannschaft 2", 
@@ -63,15 +77,15 @@ foreach ($line in $csvContent[1..($csvContent.Count - 1)]) {
     $wochentag = $fields[2]
     $nummer = $fields[3]
     $st = $fields[4]
-    $mannschaft1 = $fields[5]
-    $mannschaft2 = $fields[6]
-    $schiedsgericht = $fields[7]
-    $gastgeber = $fields[8]
-    $austragungsortErgebnis = $fields[9]
-    $austragungsort = $fields[10]
+    $mannschaft1 = Fix-GermanEncoding $fields[5]
+    $mannschaft2 = Fix-GermanEncoding $fields[6]
+    $schiedsgericht = Fix-GermanEncoding $fields[7]
+    $gastgeber = Fix-GermanEncoding $fields[8]
+    $austragungsortErgebnis = Fix-GermanEncoding $fields[9]
+    $austragungsort = Fix-GermanEncoding $fields[10]
     $ergebnis = $fields[11]
     $saison = $fields[12]
-    $spielrunde = $fields[13]
+    $spielrunde = Fix-GermanEncoding $fields[13]
     $geschlecht = $fields[14]
     
     # Skip rows without essential data
