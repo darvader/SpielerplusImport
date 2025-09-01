@@ -46,6 +46,8 @@ $envConfig = Get-EnvironmentConfig
 $GoogleMapsApiKey = if ($envConfig["GOOGLE_MAPS_API_KEY"]) { $envConfig["GOOGLE_MAPS_API_KEY"] } else { "" }
 $homeTeamName = if ($envConfig["HOME_TEAM_NAME"]) { $envConfig["HOME_TEAM_NAME"] } else { "1. VSV Jena II" }
 $homeTeamVenue = if ($envConfig["HOME_TEAM_VENUE"]) { $envConfig["HOME_TEAM_VENUE"] } else { "SH Lobdeburgschule (07747 Jena)" }
+$responseDeadlineHours = if ($envConfig["RESPONSE_DEADLINE_HOURS"]) { [int]$envConfig["RESPONSE_DEADLINE_HOURS"] } else { 168 }  # 7 days default
+$reminderHours = if ($envConfig["REMINDER_HOURS"]) { [int]$envConfig["REMINDER_HOURS"] } else { 336 }  # 14 days default
 
 Write-Host "Reading CSV file..." -ForegroundColor Green
 
@@ -53,6 +55,8 @@ Write-Host "Configuration:" -ForegroundColor Cyan
 Write-Host "  Home Team: $homeTeamName" -ForegroundColor White
 Write-Host "  Home Venue: $homeTeamVenue" -ForegroundColor White
 Write-Host "  Google Maps API: $(if ($GoogleMapsApiKey) { 'Configured' } else { 'Not configured (using static estimates)' })" -ForegroundColor White
+Write-Host "  Response Deadline: $responseDeadlineHours hours ($([math]::Round($responseDeadlineHours / 24, 1)) days)" -ForegroundColor White
+Write-Host "  Reminder Time: $reminderHours hours ($([math]::Round($reminderHours / 24, 1)) days)" -ForegroundColor White
 
 if ($GoogleMapsApiKey -and $GoogleMapsApiKey -ne "your_google_maps_api_key_here") {
     Write-Host "`nGoogle Maps API Setup:" -ForegroundColor Cyan
@@ -296,9 +300,9 @@ foreach ($line in $csvContent[1..($csvContent.Count - 1)]) {
         continue
     }
     
-    # Calculate hours before game for deadlines
-    $hoursOneWeekBefore = 7 * 24  # 7 days = 168 hours
-    $hoursTwoWeeksBefore = 14 * 24  # 14 days = 336 hours
+    # Calculate hours before game for deadlines (using configured values)
+    # $responseDeadlineHours = hours before game for final response deadline (Zu-/Absagen bis)
+    # $reminderHours = hours before game for reminder notification (Erinnerung zum Zu-/Absagen)
     
     # Create info text with referee and game ID
     $gameInfo = "$st - $spielrunde | Spiel-ID: $nummer | Schiedsrichter: $schiedsgericht"
@@ -346,8 +350,8 @@ foreach ($line in $csvContent[1..($csvContent.Count - 1)]) {
         'Infos zum Spiel (Optional)' = $gameInfo  # Round, league, game ID and referee info
         'Nominierung (Optional)' = ""  # Not available in source data
         'Teilname (Optional)' = ""  # Not available in source data
-        'Zu-/Absagen bis (Stunden vor dem Termin)' = $hoursOneWeekBefore  # 168 hours (7 days) before game
-        'Erinnerung zum Zu-/Absagen (Stunden vor dem Termin)' = $hoursTwoWeeksBefore  # 336 hours (14 days) before game
+        'Zu-/Absagen bis (Stunden vor dem Termin)' = $responseDeadlineHours  # Configurable hours before game for response deadline
+        'Erinnerung zum Zu-/Absagen (Stunden vor dem Termin)' = $reminderHours  # Configurable hours before game for reminder
         # Additional fields for reference (not in Excel template but useful)
         '_Season' = $saison
         '_Gender' = $geschlecht

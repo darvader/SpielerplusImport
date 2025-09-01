@@ -125,8 +125,37 @@ SpielerplusImport/
 
 ## Configuration
 
+### Environment Settings
+Create a `.env` file (copy from `.env.example`) to configure:
+
+```properties
+# Google Maps API (optional)
+GOOGLE_MAPS_API_KEY=your_api_key_here
+
+# Team Settings
+HOME_TEAM_NAME=1. VSV Jena II
+HOME_TEAM_VENUE=SH Lobdeburgschule (07747 Jena)
+
+# Deadline Configuration (hours before game)
+RESPONSE_DEADLINE_HOURS=168  # 7 days for response deadline
+REMINDER_HOURS=336           # 14 days for reminder notification
+```
+
+### Available Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `GOOGLE_MAPS_API_KEY` | (empty) | API key for real-time travel calculations |
+| `HOME_TEAM_NAME` | "1. VSV Jena II" | Name of your team in the CSV |
+| `HOME_TEAM_VENUE` | "SH Lobdeburgschule (07747 Jena)" | Your home venue |
+| `RESPONSE_DEADLINE_HOURS` | 168 | Hours before game for final response (7 days) |
+| `REMINDER_HOURS` | 336 | Hours before game for reminder (14 days) |
+
+### Google Maps Integration
+For real-time travel calculations, see [GOOGLE_MAPS_SETUP.md](GOOGLE_MAPS_SETUP.md)
+
 ### Adding New Cities
-To add travel times for new venues, modify the `Get-TravelTimeFromJena` function:
+To add travel times for new venues, modify the `Get-TravelTime` function:
 
 ```powershell
 if ($venue -like "*NewCity*") { return 75 }  # 75 minutes to NewCity
