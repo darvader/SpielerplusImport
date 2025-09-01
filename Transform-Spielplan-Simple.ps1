@@ -141,8 +141,8 @@ foreach ($line in $csvContent[1..($csvContent.Count - 1)]) {
         'Gegner' = $opponent  # The other team (opponent)
         'Start-Datum' = if ($gameDate) { $gameDate } else { $null }
         'End-Datum' = if ($gameDate) { $gameDate } else { $null }  # Same as start date for volleyball games
-        'Start-Zeit' = if ($gameTime) { $gameTime.TimeOfDay.TotalDays } else { $null }  # Excel time format
-        'End-Zeit (Optional)' = if ($gameTime) { ($gameTime.AddHours(2)).TimeOfDay.TotalDays } else { $null }  # Estimated 2-hour duration
+        'Start-Zeit' = if ($gameTime) { $gameTime.ToString("HH:mm:ss") } else { $null }  # Time format hh:mm:ss from Uhrzeit
+        'End-Zeit (Optional)' = if ($gameTime) { ($gameTime.AddHours(8)).ToString("HH:mm:ss") } else { $null }  # Game time plus 8 hours as hh:mm:ss
         'Treffen (Optional)' = if ($gameTime) { ($gameTime.AddMinutes(-30)).TimeOfDay.TotalDays } else { $null }  # 30 min before game
         'Heimspiel' = if ($isHomeGame) { "TRUE" } else { "FALSE" }  # True when VSV Jena II is Mannschaft 1
         'Gelände / Räumlichkeiten' = $austragungsort

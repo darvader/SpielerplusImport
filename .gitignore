@@ -2,3 +2,7 @@
 ~$*.xlsx
 ~$*.xls
 ~$*.xlsm
+
+# Generated output files from the transformation script
+Transformed_Spielplan_ExcelFormat.csv
+Transformed_Spielplan_ExcelFormat.xlsx
