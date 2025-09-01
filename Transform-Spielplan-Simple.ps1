@@ -46,6 +46,26 @@ function Fix-GermanEncoding {
     return $text
 }
 
+# Function to estimate travel time from Jena to destination (in minutes)
+function Get-TravelTimeFromJena {
+    param([string]$venue)
+    
+    # Extract city names from venue strings and estimate travel times
+    # Based on typical driving distances from Jena
+    
+    if ($venue -like "*Erfurt*") { return 60 }      # ~45-60 min to Erfurt
+    if ($venue -like "*Weimar*") { return 45 }      # ~30-45 min to Weimar  
+    if ($venue -like "*Gera*") { return 45 }        # ~30-45 min to Gera
+    if ($venue -like "*Meiningen*") { return 90 }   # ~75-90 min to Meiningen
+    if ($venue -like "*Suhl*") { return 75 }        # ~60-75 min to Suhl
+    if ($venue -like "*Altenburg*") { return 60 }   # ~45-60 min to Altenburg
+    if ($venue -like "*Bleicherode*") { return 120 } # ~90-120 min to Bleicherode
+    if ($venue -like "*Oberweißbach*") { return 60 } # ~45-60 min to Oberweißbach
+    
+    # Default for unknown locations
+    return 90
+}
+
 # Define the columns we want to keep (up to 'Geschlecht')
 $desiredColumns = @(
     "Datum", "Uhrzeit", "Wochentag", "#", "ST", "Mannschaft 1", "Mannschaft 2", 
@@ -107,16 +127,18 @@ foreach ($line in $csvContent[1..($csvContent.Count - 1)]) {
             $gameDate = [DateTime]::ParseExact($datum, "dd.MM.yyyy", $null)
         }
         if (![string]::IsNullOrWhiteSpace($uhrzeit)) {
-            $gameTime = [DateTime]::ParseExact($uhrzeit, "HH:mm:ss", $null)
+            # If Uhrzeit is "00:00:00", use "11:00:00" instead
+            $timeToUse = if ($uhrzeit -eq "00:00:00") { "11:00:00" } else { $uhrzeit }
+            $gameTime = [DateTime]::ParseExact($timeToUse, "HH:mm:ss", $null)
         }
     } catch {
         Write-Warning "Could not parse date/time for row: $nummer"
         continue
     }
     
-    # Calculate dates for deadlines
-    $oneWeekBefore = if ($gameDate) { $gameDate.AddDays(-7) } else { $null }
-    $twoWeeksBefore = if ($gameDate) { $gameDate.AddDays(-14) } else { $null }
+    # Calculate hours before game for deadlines
+    $hoursOneWeekBefore = 7 * 24  # 7 days = 168 hours
+    $hoursTwoWeeksBefore = 14 * 24  # 14 days = 336 hours
     
     # Create info text with referee and game ID
     $gameInfo = "$st - $spielrunde | Spiel-ID: $nummer | Schiedsrichter: $schiedsgericht"
@@ -135,6 +157,20 @@ foreach ($line in $csvContent[1..($csvContent.Count - 1)]) {
         $opponent = $mannschaft1
     }
     
+    # Calculate meeting time (Treffen)
+    $treffenTime = $null
+    if ($gameTime) {
+        if ($isHomeGame) {
+            # Home game: 2 hours before start time
+            $treffenTime = ($gameTime.AddHours(-2)).ToString("HH:mm:ss")
+        } else {
+            # Away game: travel time + 30 min buffer before start time
+            $travelMinutes = Get-TravelTimeFromJena $austragungsort
+            $totalMinutesEarly = $travelMinutes + 60
+            $treffenTime = ($gameTime.AddMinutes(-$totalMinutesEarly)).ToString("HH:mm:ss")
+        }
+    }
+    
     # Create transformed record matching Excel template columns exactly
     $transformedRecord = [PSCustomObject]@{
         'Spieltyp (Opptional)' = "Spiel"  # Default to "Spiel" for all volleyball games
@@ -143,15 +179,15 @@ foreach ($line in $csvContent[1..($csvContent.Count - 1)]) {
         'End-Datum' = if ($gameDate) { $gameDate } else { $null }  # Same as start date for volleyball games
         'Start-Zeit' = if ($gameTime) { $gameTime.ToString("HH:mm:ss") } else { $null }  # Time format hh:mm:ss from Uhrzeit
         'End-Zeit (Optional)' = if ($gameTime) { ($gameTime.AddHours(8)).ToString("HH:mm:ss") } else { $null }  # Game time plus 8 hours as hh:mm:ss
-        'Treffen (Optional)' = if ($gameTime) { ($gameTime.AddMinutes(-30)).TimeOfDay.TotalDays } else { $null }  # 30 min before game
+        'Treffen (Optional)' = $treffenTime  # Meeting time based on home/away game logic
         'Heimspiel' = if ($isHomeGame) { "TRUE" } else { "FALSE" }  # True when VSV Jena II is Mannschaft 1
         'Gelände / Räumlichkeiten' = $austragungsort
         'Adresse (Optional)' = ""  # Not available in source data
         'Infos zum Spiel (Optional)' = $gameInfo  # Round, league, game ID and referee info
         'Nominierung (Optional)' = ""  # Not available in source data
         'Teilname (Optional)' = ""  # Not available in source data
-        'Zu-/Absagen bis (Stunden vor dem Termin)' = if ($oneWeekBefore) { $oneWeekBefore } else { $null }  # One week before game
-        'Erinnerung zum Zu-/Absagen (Stunden vor dem Termin)' = if ($twoWeeksBefore) { $twoWeeksBefore } else { $null }  # Two weeks before game
+        'Zu-/Absagen bis (Stunden vor dem Termin)' = $hoursOneWeekBefore  # 168 hours (7 days) before game
+        'Erinnerung zum Zu-/Absagen (Stunden vor dem Termin)' = $hoursTwoWeeksBefore  # 336 hours (14 days) before game
         # Additional fields for reference (not in Excel template but useful)
         '_Season' = $saison
         '_Gender' = $geschlecht
