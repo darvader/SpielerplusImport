@@ -15,11 +15,60 @@ try {
     Import-Module ImportExcel
 }
 
+# Add System.Web assembly for URL encoding
+Add-Type -AssemblyName System.Web
+
+# Function to load environment variables from .env file
+function Get-EnvironmentConfig {
+    $envFile = ".\.env"
+    $config = @{}
+    
+    if (Test-Path $envFile) {
+        Get-Content $envFile | ForEach-Object {
+            if ($_ -match "^\s*([^#=]+)\s*=\s*(.*)$") {
+                $key = $matches[1].Trim()
+                $value = $matches[2].Trim()
+                $config[$key] = $value
+            }
+        }
+        Write-Host "Loaded configuration from .env file" -ForegroundColor Green
+    } else {
+        Write-Host "No .env file found. Copy .env.example to .env and configure your settings." -ForegroundColor Yellow
+    }
+    
+    return $config
+}
+
+# Load environment configuration
+$envConfig = Get-EnvironmentConfig
+
+# Get configuration values with fallbacks
+$GoogleMapsApiKey = if ($envConfig["GOOGLE_MAPS_API_KEY"]) { $envConfig["GOOGLE_MAPS_API_KEY"] } else { "" }
+$homeTeamName = if ($envConfig["HOME_TEAM_NAME"]) { $envConfig["HOME_TEAM_NAME"] } else { "1. VSV Jena II" }
+$homeTeamVenue = if ($envConfig["HOME_TEAM_VENUE"]) { $envConfig["HOME_TEAM_VENUE"] } else { "SH Lobdeburgschule (07747 Jena)" }
+
 Write-Host "Reading CSV file..." -ForegroundColor Green
 
-# Configuration
-$homeTeamName = "1. VSV Jena II"
-$homeTeamVenue = "SH Lobdeburgschule (07747 Jena)"  # Home venue for travel calculations
+Write-Host "Configuration:" -ForegroundColor Cyan
+Write-Host "  Home Team: $homeTeamName" -ForegroundColor White
+Write-Host "  Home Venue: $homeTeamVenue" -ForegroundColor White
+Write-Host "  Google Maps API: $(if ($GoogleMapsApiKey) { 'Configured' } else { 'Not configured (using static estimates)' })" -ForegroundColor White
+
+if ($GoogleMapsApiKey -and $GoogleMapsApiKey -ne "your_google_maps_api_key_here") {
+    Write-Host "`nGoogle Maps API Setup:" -ForegroundColor Cyan
+    Write-Host "  To use Google Maps for real-time travel calculations, ensure:" -ForegroundColor Gray
+    Write-Host "  1. Distance Matrix API is enabled in Google Cloud Console" -ForegroundColor Gray
+    Write-Host "  2. Billing is set up for your Google Cloud project" -ForegroundColor Gray
+    Write-Host "  3. Your API key has no restrictions blocking this usage" -ForegroundColor Gray
+    Write-Host "  4. You haven't exceeded your quota limits" -ForegroundColor Gray
+} elseif (!$GoogleMapsApiKey -or $GoogleMapsApiKey -eq "your_google_maps_api_key_here") {
+    Write-Host "`nGoogle Maps API not configured. Using static travel time estimates." -ForegroundColor Yellow
+    Write-Host "  To enable real-time calculations:" -ForegroundColor Gray
+    Write-Host "  1. Copy .env.example to .env" -ForegroundColor Gray
+    Write-Host "  2. Get API key from: https://console.cloud.google.com/apis/credentials" -ForegroundColor Gray
+    Write-Host "  3. Enable Distance Matrix API in Google Cloud Console" -ForegroundColor Gray
+    Write-Host "  4. Set up billing for your Google Cloud project" -ForegroundColor Gray
+}
 
 # Get the current directory and find CSV file
 $currentDir = Get-Location
@@ -91,48 +140,90 @@ function Get-TravelTime {
         return 0
     }
     
-    # Try to get travel time from Google Maps API (placeholder for future implementation)
-    try {
-        # Future Google Maps API integration would go here
-        # For now, use fallback static values based on cities
-        
-        # Extract city names for fallback lookup
-        $originCity = if ($origin -match '\d{5}\s+([^,]+)') { $matches[1] } else { "Unknown" }
-        $destCity = if ($destination -match '\d{5}\s+([^,]+)') { $matches[1] } else { "Unknown" }
-        
-        # Static travel time matrix (in minutes) from various cities
-        $travelMatrix = @{
-            "Jena-Erfurt" = 60
-            "Jena-Weimar" = 45
-            "Jena-Gera" = 45
-            "Jena-Meiningen" = 90
-            "Jena-Suhl" = 75
-            "Jena-Altenburg" = 60
-            "Jena-Bleicherode" = 120
-            "Jena-Oberweißbach" = 60
-            # Add reverse routes
-            "Erfurt-Jena" = 60
-            "Weimar-Jena" = 45
-            "Gera-Jena" = 45
-            "Meiningen-Jena" = 90
-            "Suhl-Jena" = 75
-            "Altenburg-Jena" = 60
-            "Bleicherode-Jena" = 120
-            "Oberweißbach-Jena" = 60
+    # Try Google Maps API if API key is provided
+    if (![string]::IsNullOrWhiteSpace($GoogleMapsApiKey)) {
+        try {
+            Write-Host "Calculating travel time from $origin to $destination using Google Maps..." -ForegroundColor Yellow
+            
+            # URL encode the addresses for the API
+            $encodedOrigin = [System.Web.HttpUtility]::UrlEncode($origin)
+            $encodedDestination = [System.Web.HttpUtility]::UrlEncode($destination)
+            
+            # Construct Google Maps Distance Matrix API URL
+            $apiUrl = "https://maps.googleapis.com/maps/api/distancematrix/json?origins=$encodedOrigin&destinations=$encodedDestination&mode=driving&language=de&key=$GoogleMapsApiKey"
+            
+            # Make API request
+            $response = Invoke-RestMethod -Uri $apiUrl -Method Get
+            
+            # Check if API call was successful
+            if ($response.status -eq "OK" -and $response.rows.Count -gt 0 -and $response.rows[0].elements.Count -gt 0) {
+                $element = $response.rows[0].elements[0]
+                
+                if ($element.status -eq "OK") {
+                    $durationSeconds = $element.duration.value
+                    $durationMinutes = [Math]::Ceiling($durationSeconds / 60.0)
+                    $distance = $element.distance.text
+                    
+                    Write-Host "Google Maps result: $distance, $durationMinutes minutes" -ForegroundColor Green
+                    return $durationMinutes
+                } else {
+                    Write-Warning "Google Maps API element status: $($element.status)"
+                }
+            } elseif ($response.status -eq "REQUEST_DENIED") {
+                Write-Warning "Google Maps API REQUEST_DENIED. Please check:"
+                Write-Warning "  1. API key is valid and not expired"
+                Write-Warning "  2. Distance Matrix API is enabled in Google Cloud Console"
+                Write-Warning "  3. Billing is set up for your Google Cloud project"
+                Write-Warning "  4. API key restrictions allow this domain/IP"
+                Write-Warning "  5. You haven't exceeded your quota limits"
+            } else {
+                Write-Warning "Google Maps API response status: $($response.status)"
+                if ($response.error_message) {
+                    Write-Warning "Error message: $($response.error_message)"
+                }
+            }
+        } catch {
+            Write-Warning "Failed to query Google Maps API: $($_.Exception.Message)"
         }
-        
-        $routeKey = "$originCity-$destCity"
-        if ($travelMatrix.ContainsKey($routeKey)) {
-            return $travelMatrix[$routeKey]
-        }
-        
-        # Default travel time for unknown routes
-        return 90
-        
-    } catch {
-        Write-Warning "Could not calculate travel time from $origin to $destination. Using default."
-        return 90
     }
+    
+    # Fallback to static travel time estimates
+    Write-Host "Using static travel time estimates for $origin to $destination" -ForegroundColor Cyan
+    
+    # Extract city names for fallback lookup
+    $originCity = if ($origin -match '\d{5}\s+([^,]+)') { $matches[1] } else { "Unknown" }
+    $destCity = if ($destination -match '\d{5}\s+([^,]+)') { $matches[1] } else { "Unknown" }
+    
+    # Static travel time matrix (in minutes) from various cities
+    $travelMatrix = @{
+        "Jena-Erfurt" = 60
+        "Jena-Weimar" = 45
+        "Jena-Gera" = 45
+        "Jena-Meiningen" = 90
+        "Jena-Suhl" = 75
+        "Jena-Altenburg" = 60
+        "Jena-Bleicherode" = 120
+        "Jena-Oberweißbach" = 60
+        # Add reverse routes
+        "Erfurt-Jena" = 60
+        "Weimar-Jena" = 45
+        "Gera-Jena" = 45
+        "Meiningen-Jena" = 90
+        "Suhl-Jena" = 75
+        "Altenburg-Jena" = 60
+        "Bleicherode-Jena" = 120
+        "Oberweißbach-Jena" = 60
+    }
+    
+    $routeKey = "$originCity-$destCity"
+    if ($travelMatrix.ContainsKey($routeKey)) {
+        Write-Host "Found static route: $routeKey = $($travelMatrix[$routeKey]) minutes" -ForegroundColor Gray
+        return $travelMatrix[$routeKey]
+    }
+    
+    # Default travel time for unknown routes
+    Write-Host "Using default travel time (90 minutes) for unknown route: $routeKey" -ForegroundColor Gray
+    return 90
 }
 
 # Define the columns we want to keep (up to 'Geschlecht')

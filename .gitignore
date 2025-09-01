@@ -6,3 +6,6 @@
 # Generated output files from the transformation script
 Transformed_Spielplan_ExcelFormat.csv
 Transformed_Spielplan_ExcelFormat.xlsx
+
+# Environment files containing API keys and sensitive configuration
+.env
