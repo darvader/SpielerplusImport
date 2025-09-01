@@ -544,8 +544,8 @@ foreach ($line in $csvContent[1..($csvContent.Count - 1)]) {
     $transformedRecord = [PSCustomObject]@{
         'Spieltyp (Opptional)' = "Spiel"  # Default to "Spiel" for all volleyball games
         'Gegner' = $opponent  # The other team (opponent)
-        'Start-Datum' = if ($gameDate) { $gameDate.ToString("dd.MM.yyyy") } else { "" }
-        'End-Datum' = if ($gameDate) { $gameDate.ToString("dd.MM.yyyy") } else { "" }  # Same as start date for volleyball games
+        'Start-Datum' = if ($gameDate) { $gameDate } else { $null }  # Excel date format
+        'End-Datum' = if ($gameDate) { $gameDate } else { $null }    # Same as start date for volleyball games - Excel date format
         'Start-Zeit' = if ($gameTime) { $gameTime.ToString("HH:mm:ss") } else { "" }  # Time format hh:mm:ss from Uhrzeit
         'End-Zeit (Optional)' = if ($gameTime) { ($gameTime.AddHours(8)).ToString("HH:mm:ss") } else { "" }  # Game time plus 8 hours as hh:mm:ss
         'Treffen (Optional)' = $treffenTime  # Meeting time based on home/away game logic
