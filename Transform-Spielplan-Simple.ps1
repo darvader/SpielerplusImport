@@ -17,6 +17,10 @@ try {
 
 Write-Host "Reading CSV file..." -ForegroundColor Green
 
+# Configuration
+$homeTeamName = "1. VSV Jena II"
+$homeTeamVenue = "SH Lobdeburgschule (07747 Jena)"  # Home venue for travel calculations
+
 # Get the current directory and find CSV file
 $currentDir = Get-Location
 $csvFiles = Get-ChildItem -Path $currentDir -Filter "*Spielplan*.csv"
@@ -46,24 +50,89 @@ function Fix-GermanEncoding {
     return $text
 }
 
-# Function to estimate travel time from Jena to destination (in minutes)
-function Get-TravelTimeFromJena {
+# Function to extract postal code and city from venue string (from brackets)
+function Get-PostalCodeAndCity {
     param([string]$venue)
     
-    # Extract city names from venue strings and estimate travel times
-    # Based on typical driving distances from Jena
+    # Extract content from brackets like "(07747 Jena)" or "(99096 Erfurt)"
+    if ($venue -match '\((\d{5})\s+([^)]+)\)') {
+        $postalCode = $matches[1]
+        $city = $matches[2]
+        return "$postalCode $city, Germany"
+    }
     
-    if ($venue -like "*Erfurt*") { return 60 }      # ~45-60 min to Erfurt
-    if ($venue -like "*Weimar*") { return 45 }      # ~30-45 min to Weimar  
-    if ($venue -like "*Gera*") { return 45 }        # ~30-45 min to Gera
-    if ($venue -like "*Meiningen*") { return 90 }   # ~75-90 min to Meiningen
-    if ($venue -like "*Suhl*") { return 75 }        # ~60-75 min to Suhl
-    if ($venue -like "*Altenburg*") { return 60 }   # ~45-60 min to Altenburg
-    if ($venue -like "*Bleicherode*") { return 120 } # ~90-120 min to Bleicherode
-    if ($venue -like "*Oberweißbach*") { return 60 } # ~45-60 min to Oberweißbach
+    # Fallback - try to extract city name without postal code
+    if ($venue -like "*Jena*") { return "07747 Jena, Germany" }
+    if ($venue -like "*Erfurt*") { return "99096 Erfurt, Germany" }
+    if ($venue -like "*Weimar*") { return "99427 Weimar, Germany" }
+    if ($venue -like "*Gera*") { return "07546 Gera, Germany" }
+    if ($venue -like "*Meiningen*") { return "98617 Meiningen, Germany" }
+    if ($venue -like "*Suhl*") { return "98529 Suhl, Germany" }
+    if ($venue -like "*Altenburg*") { return "04600 Altenburg, Germany" }
+    if ($venue -like "*Bleicherode*") { return "95752 Bleicherode, Germany" }
+    if ($venue -like "*Oberweißbach*") { return "98744 Oberweißbach, Germany" }
     
-    # Default for unknown locations
-    return 90
+    return "Unknown Location, Germany"
+}
+
+# Function to estimate travel time from origin to destination (in minutes)
+function Get-TravelTime {
+    param(
+        [string]$originVenue,
+        [string]$destinationVenue
+    )
+    
+    # Extract postal codes and cities from both venues
+    $origin = Get-PostalCodeAndCity $originVenue
+    $destination = Get-PostalCodeAndCity $destinationVenue
+    
+    # If origin and destination are the same, it's a local game (0 travel time)
+    if ($origin -eq $destination) {
+        return 0
+    }
+    
+    # Try to get travel time from Google Maps API (placeholder for future implementation)
+    try {
+        # Future Google Maps API integration would go here
+        # For now, use fallback static values based on cities
+        
+        # Extract city names for fallback lookup
+        $originCity = if ($origin -match '\d{5}\s+([^,]+)') { $matches[1] } else { "Unknown" }
+        $destCity = if ($destination -match '\d{5}\s+([^,]+)') { $matches[1] } else { "Unknown" }
+        
+        # Static travel time matrix (in minutes) from various cities
+        $travelMatrix = @{
+            "Jena-Erfurt" = 60
+            "Jena-Weimar" = 45
+            "Jena-Gera" = 45
+            "Jena-Meiningen" = 90
+            "Jena-Suhl" = 75
+            "Jena-Altenburg" = 60
+            "Jena-Bleicherode" = 120
+            "Jena-Oberweißbach" = 60
+            # Add reverse routes
+            "Erfurt-Jena" = 60
+            "Weimar-Jena" = 45
+            "Gera-Jena" = 45
+            "Meiningen-Jena" = 90
+            "Suhl-Jena" = 75
+            "Altenburg-Jena" = 60
+            "Bleicherode-Jena" = 120
+            "Oberweißbach-Jena" = 60
+        }
+        
+        $routeKey = "$originCity-$destCity"
+        if ($travelMatrix.ContainsKey($routeKey)) {
+            return $travelMatrix[$routeKey]
+        }
+        
+        # Default travel time for unknown routes
+        return 90
+        
+    } catch {
+        Write-Warning "Could not calculate travel time from $origin to $destination. Using default."
+        return 90
+    }
 }
 
 # Define the columns we want to keep (up to 'Geschlecht')
@@ -113,8 +182,8 @@ foreach ($line in $csvContent[1..($csvContent.Count - 1)]) {
         continue
     }
     
-    # Filter only games with '1. VSV Jena II'
-    if ($mannschaft1 -ne "1. VSV Jena II" -and $mannschaft2 -ne "1. VSV Jena II") {
+    # Filter only games with the home team
+    if ($mannschaft1 -ne $homeTeamName -and $mannschaft2 -ne $homeTeamName) {
         continue
     }
     
@@ -143,29 +212,29 @@ foreach ($line in $csvContent[1..($csvContent.Count - 1)]) {
     # Create info text with referee and game ID
     $gameInfo = "$st - $spielrunde | Spiel-ID: $nummer | Schiedsrichter: $schiedsgericht"
     
-    # Determine home game and opponent based on which position '1. VSV Jena II' is in
+    # Determine home game and opponent based on which position the home team is in
     $isHomeGame = $false
     $opponent = ""
     
-    if ($mannschaft1 -eq "1. VSV Jena II") {
-        # VSV Jena II is Mannschaft 1, so it's a home game
+    if ($mannschaft1 -eq $homeTeamName) {
+        # Home team is Mannschaft 1, so it's a home game
         $isHomeGame = $true
         $opponent = $mannschaft2
     } else {
-        # VSV Jena II is Mannschaft 2, so it's an away game
+        # Home team is Mannschaft 2, so it's an away game
         $isHomeGame = $false
         $opponent = $mannschaft1
     }
     
     # Calculate meeting time (Treffen)
-    $treffenTime = $null
+    $treffenTime = ""
     if ($gameTime) {
         if ($isHomeGame) {
             # Home game: 2 hours before start time
             $treffenTime = ($gameTime.AddHours(-2)).ToString("HH:mm:ss")
         } else {
-            # Away game: travel time + 30 min buffer before start time
-            $travelMinutes = Get-TravelTimeFromJena $austragungsort
+            # Away game: travel time + 60 min buffer before start time
+            $travelMinutes = Get-TravelTime $homeTeamVenue $austragungsort
             $totalMinutesEarly = $travelMinutes + 60
             $treffenTime = ($gameTime.AddMinutes(-$totalMinutesEarly)).ToString("HH:mm:ss")
         }
@@ -175,12 +244,12 @@ foreach ($line in $csvContent[1..($csvContent.Count - 1)]) {
     $transformedRecord = [PSCustomObject]@{
         'Spieltyp (Opptional)' = "Spiel"  # Default to "Spiel" for all volleyball games
         'Gegner' = $opponent  # The other team (opponent)
-        'Start-Datum' = if ($gameDate) { $gameDate } else { $null }
-        'End-Datum' = if ($gameDate) { $gameDate } else { $null }  # Same as start date for volleyball games
-        'Start-Zeit' = if ($gameTime) { $gameTime.ToString("HH:mm:ss") } else { $null }  # Time format hh:mm:ss from Uhrzeit
-        'End-Zeit (Optional)' = if ($gameTime) { ($gameTime.AddHours(8)).ToString("HH:mm:ss") } else { $null }  # Game time plus 8 hours as hh:mm:ss
+        'Start-Datum' = if ($gameDate) { $gameDate.ToString("dd.MM.yyyy") } else { "" }
+        'End-Datum' = if ($gameDate) { $gameDate.ToString("dd.MM.yyyy") } else { "" }  # Same as start date for volleyball games
+        'Start-Zeit' = if ($gameTime) { $gameTime.ToString("HH:mm:ss") } else { "" }  # Time format hh:mm:ss from Uhrzeit
+        'End-Zeit (Optional)' = if ($gameTime) { ($gameTime.AddHours(8)).ToString("HH:mm:ss") } else { "" }  # Game time plus 8 hours as hh:mm:ss
         'Treffen (Optional)' = $treffenTime  # Meeting time based on home/away game logic
-        'Heimspiel' = if ($isHomeGame) { "TRUE" } else { "FALSE" }  # True when VSV Jena II is Mannschaft 1
+        'Heimspiel' = if ($isHomeGame) { "TRUE" } else { "FALSE" }  # True when home team is Mannschaft 1
         'Gelände / Räumlichkeiten' = $austragungsort
         'Adresse (Optional)' = ""  # Not available in source data
         'Infos zum Spiel (Optional)' = $gameInfo  # Round, league, game ID and referee info
@@ -203,6 +272,7 @@ Write-Host "Transformed $($transformedData.Count) records" -ForegroundColor Gree
 Write-Host "Exporting to Excel..." -ForegroundColor Green
 
 try {
+    # Simple Excel export without complex formatting to avoid corruption
     $transformedData | Export-Excel -Path $OutputPath -WorksheetName "Games" -AutoSize -AutoFilter -FreezeTopRow -BoldTopRow
     Write-Host "Successfully exported to: $OutputPath" -ForegroundColor Green
 } catch {
