@@ -13,16 +13,47 @@ This project transforms volleyball schedule data from CSV format (German volleyb
 ## Technical Stack
 - **PowerShell**: Main scripting language
 - **ImportExcel Module**: For Excel file generation and formatting
-- **CSV Processing**: Manual parsing with encoding fixes for German characters
-- **Time Calculations**: Meeting times based on travel distances and home/away logic
+- **OpenAI API**: gpt-4o-mini model for intelligent German character restoration
+- **Google Maps API**: Distance Matrix API for real-time travel calculations
+- **CSV Processing**: Manual parsing with AI-powered encoding fixes
+- **Caching System**: Global cache to prevent duplicate API calls
+- **Environment Configuration**: Secure API key management via .env files
 
 ## Code Patterns & Conventions
 
-### German Character Handling
+### AI-Powered German Character Handling
 ```powershell
-# Always use Fix-GermanEncoding function for text fields
-$text = $text -replace "Oberwei�bach", "Oberweißbach"
-$text = $text -replace "Th�ringenliga", "Thüringenliga"
+# OpenAI API integration with caching
+function Fix-GermanEncoding {
+    param([string]$text)
+    
+    # Check cache first
+    if ($global:germanTextCache.ContainsKey($text)) {
+        return $global:germanTextCache[$text]
+    }
+    
+    # Use OpenAI API with rate limiting
+    if ($openAIApiKey) {
+        # Rate limiting logic
+        # API call to gpt-4o-mini model
+        # Cache result
+    } else {
+        # Fallback to local pattern matching
+        $text = $text -replace "Oberwei�bach", "Oberweißbach"
+        $text = $text -replace "Th�ringenliga", "Thüringenliga"
+    }
+}
+```
+
+### Google Maps Integration
+```powershell
+# Real-time travel time calculation
+function Get-GoogleMapsDistance {
+    param([string]$origin, [string]$destination)
+    
+    # Extract postal codes, make API call
+    # Return actual travel time with traffic
+}
 ```
 
 ### Time Formatting
@@ -74,7 +105,9 @@ $totalMinutesEarly = $travelMinutes + 60
 ## File Handling
 - **Input**: `*Spielplan*.csv` (UTF-8 encoding)
 - **Output**: `Transformed_Spielplan_ExcelFormat.xlsx`
-- **Gitignore**: Excel temp files (~$*.xlsx) and generated outputs
+- **Environment**: `.env` file for API keys and configuration
+- **Cache**: Global variables for API response caching
+- **Gitignore**: Excel temp files (~$*.xlsx), generated outputs, and environment files
 
 ## Error Handling Patterns
 ```powershell
@@ -106,3 +139,7 @@ When working on this project, you might need to:
 - Update German character encoding mappings
 - Adjust Excel column formatting
 - Handle new CSV format variations
+- Configure OpenAI API integration and caching
+- Set up Google Maps API for real-time travel calculations
+- Optimize API rate limiting and error handling
+- Update environment configuration settings

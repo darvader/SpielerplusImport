@@ -13,8 +13,10 @@ This tool is specifically designed for **1. VSV Jena II** volleyball team to con
 - Automatically detects home vs. away games
 - Calculates realistic meeting times based on travel distances
 
-### 🌍 German Data Handling
-- Fixes encoding issues with German umlauts (ä, ö, ü) and ß
+### 🌍 AI-Powered German Data Handling
+- **OpenAI API Integration**: Uses gpt-4o-mini model for intelligent German character restoration
+- **Smart Caching System**: Prevents duplicate API calls for repeated text corrections
+- **Fallback Protection**: Local pattern matching when API is unavailable
 - Processes semicolon-delimited CSV files
 - Handles German date formats (dd.MM.yyyy)
 
@@ -25,8 +27,13 @@ This tool is specifically designed for **1. VSV Jena II** volleyball team to con
   - **Away games**: Travel time + 60-minute buffer
 - Formats all times in HH:mm:ss format
 
-### 🗺️ Travel Time Estimation
-Built-in travel time estimates from Jena to common venues:
+### 🗺️ Real-Time Travel Calculations
+**Google Maps Distance Matrix API** integration for precise travel times:
+- Real-time traffic-aware calculations
+- Automatic postal code extraction from venue addresses
+- Intelligent meeting time adjustments based on actual distances
+
+**Built-in fallback estimates** from Jena to common venues:
 - Erfurt: 60 minutes
 - Weimar: 45 minutes  
 - Gera: 45 minutes
@@ -48,6 +55,10 @@ Built-in travel time estimates from Jena to common venues:
 - **ImportExcel module** (automatically installed if missing)
 - Input CSV file matching pattern `*Spielplan*.csv`
 
+### Optional API Keys
+- **OpenAI API Key**: For AI-powered German character restoration (recommended)
+- **Google Maps API Key**: For real-time travel time calculations (optional)
+
 ## Installation
 
 1. Clone this repository:
@@ -57,6 +68,12 @@ cd SpielerplusImport
 ```
 
 2. The script will automatically install the required ImportExcel module on first run.
+
+3. **Set up API keys** (optional but recommended):
+   - Copy `.env.example` to `.env`
+   - Add your OpenAI API key for intelligent German text correction
+   - Add your Google Maps API key for real-time travel calculations
+   - See [API Setup Guide](#api-setup) below for detailed instructions
 
 ## Usage
 
@@ -102,6 +119,7 @@ The Excel output contains columns compatible with SpielerPlus:
 SpielerplusImport/
 ├── Transform-Spielplan-Simple.ps1    # Main transformation script
 ├── Spielplan_Thüringenliga_Damen.csv # Sample input file
+├── .env.example                      # Environment configuration template
 ├── .gitignore                        # Git ignore rules
 ├── README.md                         # This file
 └── .github/
@@ -129,8 +147,11 @@ SpielerplusImport/
 Create a `.env` file (copy from `.env.example`) to configure:
 
 ```properties
-# Google Maps API (optional)
-GOOGLE_MAPS_API_KEY=your_api_key_here
+# OpenAI API for German character restoration (recommended)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Google Maps API for real-time travel calculations (optional)
+GOOGLE_API_KEY=your_google_api_key_here
 
 # Team Settings
 HOME_TEAM_NAME=1. VSV Jena II
@@ -145,11 +166,38 @@ REMINDER_HOURS=336           # 14 days for reminder notification
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `GOOGLE_MAPS_API_KEY` | (empty) | API key for real-time travel calculations |
+| `OPENAI_API_KEY` | (empty) | API key for AI-powered German character restoration |
+| `GOOGLE_API_KEY` | (empty) | API key for real-time travel calculations |
 | `HOME_TEAM_NAME` | "1. VSV Jena II" | Name of your team in the CSV |
 | `HOME_TEAM_VENUE` | "SH Lobdeburgschule (07747 Jena)" | Your home venue |
 | `RESPONSE_DEADLINE_HOURS` | 168 | Hours before game for final response (7 days) |
 | `REMINDER_HOURS` | 336 | Hours before game for reminder (14 days) |
+
+## API Setup
+
+### OpenAI API (Recommended)
+For intelligent German character restoration:
+
+1. **Create OpenAI Account**: Visit [platform.openai.com](https://platform.openai.com)
+2. **Generate API Key**: Go to API Keys section and create a new key
+3. **Add to .env file**: `OPENAI_API_KEY=your_api_key_here`
+4. **Benefits**: 
+   - Intelligent context-aware German character fixes
+   - Handles complex encoding issues automatically
+   - Faster than manual pattern matching
+   - Comprehensive caching prevents duplicate API calls
+
+### Google Maps API (Optional)
+For real-time travel calculations:
+
+1. **Create Google Cloud Project**: Visit [console.cloud.google.com](https://console.cloud.google.com)
+2. **Enable Distance Matrix API**: In APIs & Services
+3. **Create API Key**: In Credentials section
+4. **Add to .env file**: `GOOGLE_API_KEY=your_api_key_here`
+5. **Benefits**:
+   - Real-time traffic-aware travel times
+   - Automatic venue address parsing
+   - More accurate meeting time calculations
 
 ### Google Maps Integration
 For real-time travel calculations, see [GOOGLE_MAPS_SETUP.md](GOOGLE_MAPS_SETUP.md)
@@ -165,6 +213,27 @@ if ($venue -like "*NewCity*") { return 75 }  # 75 minutes to NewCity
 - **Home games**: Modify line with `$gameTime.AddHours(-2)`
 - **Away games**: Modify `$travelMinutes + 60` for different buffer time
 
+## Advanced Features
+
+### 🤖 AI-Powered Text Correction
+- **OpenAI gpt-4o-mini Model**: Latest, fastest, and most cost-effective model
+- **Intelligent Context**: Understands German sports terminology and locations
+- **Smart Caching**: Remembers corrections to avoid duplicate API calls
+- **Rate Limiting**: Respects API limits with intelligent throttling
+- **Fallback System**: Works without API using local pattern matching
+
+### 📊 Performance Optimizations
+- **Global Caching**: Prevents repeated API calls for same text
+- **Batch Processing**: Efficiently processes large schedule files
+- **Memory Management**: Handles large datasets without performance issues
+- **Error Recovery**: Continues processing even if individual records fail
+
+### 🔒 Security & Configuration
+- **Environment Files**: Secure API key storage in `.env` files
+- **Git Ignore**: Prevents accidental API key commits
+- **Fallback Modes**: Works without any API keys using local data
+- **Configurable Settings**: All deadlines and team settings customizable
+
 ## Troubleshooting
 
 ### Common Issues
@@ -173,13 +242,19 @@ if ($venue -like "*NewCity*") { return 75 }  # 75 minutes to NewCity
 A: Ensure your CSV file name contains "Spielplan" and is in the same directory
 
 **Q: German characters appear as question marks**
-A: The script automatically fixes common encoding issues. For new characters, add them to the `Fix-GermanEncoding` function
+A: The script uses OpenAI API for intelligent character restoration. If you don't have an API key, it falls back to local pattern matching. For new characters, add them to the `Fix-GermanEncoding` function
 
 **Q: Excel file shows dates instead of hours for deadlines**
 A: The script uses text formatting to prevent this. Ensure you're using a recent version of the ImportExcel module
 
 **Q: Meeting times seem incorrect**
-A: Check that the venue name matches patterns in `Get-TravelTimeFromJena` function
+A: Check that the venue name matches patterns in `Get-TravelTimeFromJena` function or ensure Google Maps API is configured for real-time calculations
+
+**Q: OpenAI API rate limits reached**
+A: The script automatically handles rate limiting. For heavy usage, the gpt-4o-mini model provides much higher limits than free tier models
+
+**Q: Google Maps API returns REQUEST_DENIED**
+A: Ensure Distance Matrix API is enabled in Google Cloud Console and billing is set up for your project
 
 ## Contributing
 
